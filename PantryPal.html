@@ -1,0 +1,1709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PantryPal - Your Smart Kitchen Assistant</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden; /* Prevent horizontal scroll */
+        }
+        /* Custom animations for modals and alerts */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0.95); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+        .animate-scale-in {
+            animation: scaleIn 0.3s ease-out forwards;
+        }
+
+        @keyframes slideDown {
+            from { transform: translateY(-100%); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-slide-down {
+            animation: slideDown 0.5s ease-out forwards;
+        }
+        /* Ensure the root div takes full height */
+        #root {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start; /* Align content to top */
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- React CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel for JSX transformation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- Firebase SDKs (UMD versions for global access) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <script type="text/babel">
+        // IMPORTANT SECURITY NOTE:
+        // When deploying this HTML file to a public repository like GitHub Pages,
+        // your Firebase configuration will be publicly visible in the browser's source code.
+        //
+        // This is generally acceptable for client-side Firebase SDKs, as the primary security
+        // for your data lies in your Firebase Security Rules, NOT in keeping this config secret.
+        //
+        // HOWEVER, if you have very sensitive data or are concerned about abuse (e.g., someone
+        // repeatedly hitting your Firebase services), ensure your Firebase Security Rules
+        // are EXTREMELY strict (e.g., only authenticated users can access their own data).
+        //
+        // If you are running this within a secure Canvas environment, you would typically use
+        // the global variables __firebase_config and __app_id provided by the environment,
+        // which keeps your actual config out of the code.
+        //
+        // For standalone HTML, paste your Firebase config object here:
+        const firebaseConfig = {
+            apiKey: "AIzaSyCgMiCM7qCVBxo_T4_2DQYzJzFe2x_oyB0",
+            authDomain: "pantrypal-6172b.firebaseapp.com",
+            projectId: "pantrypal-6172b",
+            storageBucket: "pantrypal-6172b.firebasestorage.app",
+            messagingSenderId: "407020112260",
+            appId: "1:407020112260:web:8491b12620770ed31775d1",
+            measurementId: "G-55LPDFW2HW"
+        };
+
+        // Check if firebaseConfig is properly set
+        if (Object.keys(firebaseConfig).length === 0 || !firebaseConfig.apiKey) {
+            console.error("Firebase configuration is missing or incomplete! Please replace `{}` with your actual Firebase config object.");
+            // Display an error message to the user on the page
+            document.getElementById('root').innerHTML = `
+                <div style="text-align: center; padding: 20px; color: red; font-family: 'Inter', sans-serif;">
+                    <h2>Configuration Error</h2>
+                    <p>Your Firebase configuration is missing or incomplete. Please open the HTML file, find the line 
+                    <code>const firebaseConfig = {};</code> and replace <code>{}</code> with your actual Firebase project configuration.</p>
+                    <p>Refer to the Firebase Console for your project's config details (Project settings -> General -> Your apps -> Web app).</p>
+                </div>
+            `;
+            // Prevent the React app from rendering if config is missing
+            throw new Error("Firebase configuration missing.");
+        }
+
+        // Initialize Firebase using the global 'firebase' object
+        const app = firebase.initializeApp(firebaseConfig);
+        const auth = app.auth(); // Correct for v8
+        const db = app.firestore(); // Correct for v8
+        const Timestamp = firebase.firestore.Timestamp; // Access Timestamp from global firebase.firestore
+
+        // Global variables for app ID and initial auth token
+        const appId = firebaseConfig.projectId;
+        const initialAuthToken = null; // No custom token for standalone browser app
+
+        // Utility function to format date
+        const formatDate = (timestamp) => {
+            if (!timestamp) return 'N/A';
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+        };
+
+        // Utility function to format date for expiration display
+        const formatExpirationDate = (timestamp) => {
+            if (!timestamp) return 'No Expiry';
+            const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        };
+
+        // AuthScreen Component
+        const AuthScreen = ({ setUserId, setUserDisplayName, showMessage }) => {
+            const [isLogin, setIsLogin] = React.useState(true);
+            const [email, setEmail] = React.useState('');
+            const [password, setPassword] = React.useState('');
+            const [displayName, setDisplayName] = React.useState('');
+            const [authLoading, setAuthLoading] = React.useState(false);
+
+            // Updated logo URL with the provided image
+            const appLogoUrl = "https://img.freepik.com/premium-vector/beautiful-flat-style-shopping-cart-icon-vector-illustration_1287271-93197.jpg?w%3D360";
+
+            const handleAuth = async () => {
+                setAuthLoading(true);
+                try {
+                    if (isLogin) {
+                        // Sign In
+                        const userCredential = await auth.signInWithEmailAndPassword(email, password); // Corrected for v8
+                        const user = userCredential.user;
+                        setUserId(user.uid);
+
+                        // Fetch display name from Firestore
+                        const userProfileRef = db.collection(`artifacts/${appId}/users/${user.uid}/profile`).doc('userProfile'); // Corrected for v8
+                        const userProfileSnap = await userProfileRef.get(); // Corrected for v8
+                        if (userProfileSnap.exists) { // Corrected for v8
+                            setUserDisplayName(userProfileSnap.data().displayName);
+                        } else {
+                            setUserDisplayName('User'); // Fallback if profile not found
+                        }
+                        showMessage("Signed in successfully!");
+                    } else {
+                        // Sign Up
+                        const userCredential = await auth.createUserWithEmailAndPassword(email, password); // Corrected for v8
+                        const user = userCredential.user;
+                        setUserId(user.uid);
+
+                        // Save display name to Firestore
+                        const userProfileRef = db.collection(`artifacts/${appId}/users/${user.uid}/profile`).doc('userProfile'); // Corrected for v8
+                        await userProfileRef.set({ displayName: displayName || 'New User', email: email }); // Corrected for v8
+                        setUserDisplayName(displayName || 'New User');
+                        showMessage("Account created successfully!");
+                    }
+                } catch (error) {
+                    console.error("Authentication error:", error);
+                    let errorMessage = "An unknown authentication error occurred.";
+                    if (error.code) {
+                        switch (error.code) {
+                            case 'auth/email-already-in-use':
+                                errorMessage = "This email is already in use.";
+                                break;
+                            case 'auth/invalid-email':
+                                errorMessage = "Invalid email address.";
+                                break;
+                            case 'auth/operation-not-allowed':
+                                errorMessage = "Email/password accounts are not enabled. Please contact support.";
+                                break;
+                            case 'auth/weak-password':
+                                errorMessage = "Password is too weak. Please choose a stronger one.";
+                                break;
+                            case 'auth/user-not-found':
+                            case 'auth/wrong-password':
+                                errorMessage = "Invalid email or password.";
+                                break;
+                            default:
+                                errorMessage = error.message;
+                        }
+                    }
+                    showMessage(errorMessage, true);
+                } finally {
+                    setAuthLoading(false);
+                }
+            };
+
+            return (
+                <div className="p-8 bg-white rounded-2xl shadow-xl max-w-md mx-auto transform transition-all duration-300 hover:scale-[1.02]">
+                    <div className="flex justify-center mb-8">
+                        <img src="https://img.freepik.com/premium-vector/beautiful-flat-style-shopping-cart-icon-vector-illustration_1287271-93197.jpg?w%3D360" alt="App Logo" className="w-32 h-32 rounded-full object-cover shadow-lg border-4 border-blue-100" />
+                    </div>
+                    <h2 className="text-3xl font-extrabold text-gray-900 mb-8 text-center">
+                        {isLogin ? 'Welcome Back!' : 'Join PantryPal!'}
+                    </h2>
+                    {!isLogin && (
+                        <div className="mb-5">
+                            <label htmlFor="displayName" className="block text-sm font-semibold text-gray-700 mb-2">Display Name</label>
+                            <input
+                                type="text"
+                                id="displayName"
+                                value={displayName}
+                                onChange={(e) => setDisplayName(e.target.value)}
+                                placeholder="Your Name"
+                                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                disabled={authLoading}
+                            />
+                        </div>
+                    )}
+                    <div className="mb-5">
+                        <label htmlFor="email" className="block text-sm font-semibold text-gray-700 mb-2">Email</label>
+                        <input
+                            type="email"
+                            id="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="your@example.com"
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                            disabled={authLoading}
+                        />
+                    </div>
+                    <div className="mb-8">
+                        <label htmlFor="password" className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
+                        <input
+                            type="password"
+                            id="password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="********"
+                            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                            disabled={authLoading}
+                        />
+                    </div>
+                    <button
+                        onClick={handleAuth}
+                        disabled={authLoading || !email || !password || (!isLogin && !displayName)}
+                        className="w-full flex items-center justify-center px-6 py-3 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-gradient-to-r from-blue-500 to-blue-700 hover:from-blue-600 hover:to-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-300 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transform transition-all duration-200 hover:scale-105"
+                    >
+                        {authLoading ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Processing...
+                            </>
+                        ) : (
+                            <>
+                                {/* <LogIn className="mr-3 h-6 w-6" /> */} <span>{isLogin ? 'Sign In' : 'Sign Up'}</span>
+                            </>
+                        )}
+                    </button>
+                    <p className="mt-6 text-center text-base text-gray-600">
+                        {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
+                        <button
+                            onClick={() => setIsLogin(!isLogin)}
+                            className="font-bold text-blue-600 hover:text-blue-800 transition duration-200"
+                            disabled={authLoading}
+                        >
+                            {isLogin ? 'Sign Up' : 'Sign In'}
+                        </button>
+                    </p>
+                </div>
+            );
+        };
+
+        // Main App Component
+        const App = () => {
+            const [userId, setUserId] = React.useState(null);
+            const [userDisplayName, setUserDisplayName] = React.useState('');
+            const [activeTab, setActiveTab] = React.useState('upload');
+            const [bills, setBills] = React.useState([]);
+            const [pantryItems, setPantryItems] = React.useState([]);
+            const [shoppingListItems, setShoppingListItems] = React.useState([]);
+            const [loading, setLoading] = React.useState(true);
+            const [error, setError] = React.useState(null);
+            const [message, setMessage] = React.useState('');
+            const [showModal, setShowModal] = React.useState(false);
+            const [modalContent, setModalContent] = React.useState('');
+            const [lowStockThreshold, setLowStockThreshold] = React.useState(2);
+            const [monthlyBudget, setMonthlyBudget] = React.useState(20000);
+            
+            // Alert Banner States
+            const [showAlertBanner, setShowAlertBanner] = React.useState(false);
+            const [alertBannerMessage, setAlertBannerMessage] = React.useState('');
+            const [currentActiveAlertType, setCurrentActiveAlertType] = React.useState(null);
+
+            // Dismissal states for each alert type
+            const [isExpiryAlertDismissed, setIsExpiryAlertDismissed] = React.useState(false);
+            const [isLowStockAlertDismissed, setIsLowStockAlertDismissed] = React.useState(false);
+            const [isBudgetAlertDismissed, setIsBudgetAlertDismissed] = React.useState(false);
+            const [isPriceIncreaseAlertDismissed, setIsPriceIncreaseAlertDismissed] = React.useState(false);
+
+
+            // Firebase Authentication and Data Listeners
+            React.useEffect(() => {
+                const unsubscribeAuth = auth.onAuthStateChanged(async (user) => { // Corrected for v8
+                    if (user) {
+                        setUserId(user.uid);
+                        const userProfileRef = db.collection(`artifacts/${appId}/users/${user.uid}/profile`).doc('userProfile'); // Corrected for v8
+                        const userProfileSnap = await userProfileRef.get(); // Corrected for v8
+                        if (userProfileSnap.exists) { // Corrected for v8
+                            setUserDisplayName(userProfileSnap.data().displayName);
+                        } else {
+                            setUserDisplayName(user.displayName || 'Guest User');
+                        }
+                        setLoading(false);
+                    } else {
+                        setUserId(null);
+                        setUserDisplayName('');
+                        if (initialAuthToken) {
+                            try {
+                                await auth.signInWithCustomToken(initialAuthToken); // Corrected for v8
+                            } catch (err) {
+                                console.error("Firebase custom token authentication error:", err);
+                                setError("Failed to authenticate with custom token. Please try again.");
+                                setLoading(false);
+                            }
+                        } else {
+                            setLoading(false);
+                        }
+                    }
+                });
+
+                return () => unsubscribeAuth();
+            }, []);
+
+            // Firestore listeners for bills, pantry items, and shopping list items
+            React.useEffect(() => {
+                if (!userId) {
+                    setBills([]);
+                    setPantryItems([]);
+                    setShoppingListItems([]);
+                    return;
+                }
+
+                const billsCollectionRef = db.collection(`artifacts/${appId}/users/${userId}/bills`); // Corrected for v8
+                const pantryCollectionRef = db.collection(`artifacts/${appId}/users/${userId}/pantry`); // Corrected for v8
+                const shoppingListCollectionRef = db.collection(`artifacts/${appId}/users/${userId}/shoppingList`); // Corrected for v8
+
+                const unsubscribeBills = billsCollectionRef.onSnapshot((snapshot) => { // Corrected for v8
+                    const fetchedBills = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setBills(fetchedBills);
+                }, (err) => {
+                    console.error("Error fetching bills:", err);
+                    setError("Failed to load bills.");
+                });
+
+                const unsubscribePantry = pantryCollectionRef.onSnapshot((snapshot) => { // Corrected for v8
+                    const fetchedPantryItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setPantryItems(fetchedPantryItems);
+                }, (err) => {
+                    console.error("Error fetching pantry items:", err);
+                    setError("Failed to load pantry items.");
+                });
+
+                const unsubscribeShoppingList = shoppingListCollectionRef.onSnapshot((snapshot) => { // Corrected for v8
+                    const fetchedShoppingListItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setShoppingListItems(fetchedShoppingListItems);
+                }, (err) => {
+                    console.error("Error fetching shopping list items:", err);
+                    setError("Failed to load shopping list.");
+                });
+
+                return () => {
+                    unsubscribeBills();
+                    unsubscribePantry();
+                    unsubscribeShoppingList();
+                };
+            }, [userId]);
+
+            // Function to show custom modal messages
+            const showMessage = (msg, isError = false) => {
+                setModalContent(msg);
+                setShowModal(true);
+                if (isError) {
+                    setError(msg);
+                } else {
+                    setMessage(msg);
+                }
+                if (!isError) {
+                    setTimeout(() => {
+                        setShowModal(false);
+                        setModalContent('');
+                        setMessage('');
+                    }, 3000);
+                }
+            };
+
+            // Function to show in-app alert banner
+            const showBannerAlert = React.useCallback((msg, type = 'general') => {
+                let shouldShow = false;
+                if (type === 'expiry' && !isExpiryAlertDismissed) {
+                    shouldShow = true;
+                } else if (type === 'lowStock' && !isLowStockAlertDismissed) {
+                    shouldShow = true;
+                } else if (type === 'budget' && !isBudgetAlertDismissed) {
+                    shouldShow = true;
+                } else if (type === 'priceIncrease' && !isPriceIncreaseAlertDismissed) {
+                    shouldShow = true;
+                } else if (type === 'general') {
+                    shouldShow = true;
+                }
+
+                if (shouldShow && (alertBannerMessage !== msg || !showAlertBanner || currentActiveAlertType !== type)) {
+                    setAlertBannerMessage(msg);
+                    setCurrentActiveAlertType(type);
+                    setShowAlertBanner(true);
+                }
+            }, [alertBannerMessage, showAlertBanner, currentActiveAlertType, isExpiryAlertDismissed, isLowStockAlertDismissed, isBudgetAlertDismissed, isPriceIncreaseAlertDismissed]);
+
+            const handleSignOut = async () => {
+                try {
+                    await auth.signOut(); // Corrected for v8
+                    showMessage("Signed out successfully.");
+                } catch (error) {
+                    console.error("Error signing out:", error);
+                    showMessage(`Error signing out: ${error.message}`, true);
+                }
+            };
+
+
+            // --- Bill Upload Component ---
+            const BillUpload = () => {
+                const [selectedFile, setSelectedFile] = React.useState(null);
+                const [isProcessing, setIsProcessing] = React.useState(false);
+
+                const handleFileChange = (event) => {
+                    setSelectedFile(event.target.files[0]);
+                    setMessage('');
+                    setError(null);
+                };
+
+                const handleUpload = async () => {
+                    if (!selectedFile) {
+                        showMessage("Please select a bill image to upload.", true);
+                        return;
+                    }
+                    if (!userId) {
+                        showMessage("User not authenticated. Please sign in or create an account to upload bills.", true);
+                        return;
+                    }
+
+                    setIsProcessing(true);
+                    showMessage("Extracting bill details...");
+                    setError(null);
+
+                    try {
+                        const reader = new FileReader();
+                        reader.readAsDataURL(selectedFile);
+                        reader.onloadend = async () => {
+                            const base64Image = reader.result.split(',')[1];
+
+                            const prompt = `
+                                You are an expert at extracting information from bill images.
+                                From the following bill image, extract the following details for each item:
+                                - item name (string)
+                                - quantity (number)
+                                - price per unit (number, if available, otherwise 0)
+                                - total price for that item (number)
+                                - category (string, e.g., "Groceries", "Personal Care", "Electronics", "Dining", "Utilities", "Other"). Choose the most appropriate category.
+
+                                Also, extract the overall total amount of the bill (number) and the date of the bill (string, in YYYY-MM-DD format). If the date is not found on the bill, return "N/A" for the date.
+
+                                Return the data as a JSON object with "items", "bill_total", and "bill_date" fields.
+                                Example format:
+                                {
+                                    "items": [
+                                        { "item": "Milk", "quantity": 2, "price_per_unit": 3.50, "total_price": 7.00, "category": "Groceries" },
+                                        { "item": "Shampoo", "quantity": 1, "price_per_unit": 5.00, "total_price": 5.00, "category": "Personal Care" }
+                                    ],
+                                    "bill_total": 12.00,
+                                    "bill_date": "2025-07-24"
+                                }
+                                Ensure all numbers are parsed correctly as floats/integers. If a value is not found, use 0 or "N/A" as appropriate.
+                            `;
+
+                            const payload = {
+                                contents: [
+                                    {
+                                        role: "user",
+                                        parts: [
+                                            { text: prompt },
+                                            {
+                                                inlineData: {
+                                                    mimeType: selectedFile.type,
+                                                    data: base64Image
+                                                }
+                                            }
+                                        ]
+                                    }
+                                ],
+                                generationConfig: {
+                                    responseMimeType: "application/json",
+                                    responseSchema: {
+                                        type: "OBJECT",
+                                        properties: {
+                                            "items": {
+                                                "type": "ARRAY",
+                                                "items": {
+                                                    "type": "OBJECT",
+                                                    "properties": {
+                                                        "item": { "type": "STRING" },
+                                                        "quantity": { "type": "NUMBER" },
+                                                        "price_per_unit": { "type": "NUMBER" },
+                                                        "total_price": { "type": "NUMBER" },
+                                                        "category": { "type": "STRING" }
+                                                    }
+                                                }
+                                            }
+                                            ,
+                                            "bill_total": { "type": "NUMBER" },
+                                            "bill_date": { "type": "STRING" }
+                                        }
+                                    }
+                                }
+                            };
+
+                            const apiKey = ""; // Canvas will provide this at runtime in its environment. For standalone, it's not needed directly if you use your own Firebase.
+                            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                            const response = await fetch(apiUrl, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify(payload)
+                            });
+
+                            const result = await response.json();
+
+                            if (result.candidates && result.candidates.length > 0 &&
+                                result.candidates[0].content && result.candidates[0].content.parts &&
+                                result.candidates[0].content.parts.length > 0) {
+                                const jsonString = result.candidates[0].content.parts[0].text;
+                                const extractedData = JSON.parse(jsonString);
+
+                                let billTimestamp;
+                                if (extractedData.bill_date && extractedData.bill_date !== 'N/A') {
+                                    billTimestamp = Timestamp.fromDate(new Date(extractedData.bill_date));
+                                } else {
+                                    billTimestamp = Timestamp.fromDate(new Date());
+                                }
+
+                                // Prioritize LLM's extracted bill_total. If not available or 0, then calculate from items.
+                                let finalTotalAmount = Number(extractedData.bill_total) || 0;
+                                if (finalTotalAmount === 0 && (extractedData.items && extractedData.items.length > 0)) {
+                                    finalTotalAmount = (extractedData.items || []).reduce((sum, item) => {
+                                        return sum + (Number(item.total_price) || 0);
+                                    }, 0);
+                                }
+
+
+                                await db.collection(`artifacts/${appId}/users/${userId}/bills`).add({ // Corrected for v8
+                                    timestamp: billTimestamp,
+                                    totalAmount: finalTotalAmount,
+                                    items: extractedData.items || [],
+                                    imageUrl: reader.result
+                                });
+                                showMessage("Bill extracted and saved successfully!");
+
+                                for (const item of extractedData.items) {
+                                    const pantryQuery = db.collection(`artifacts/${appId}/users/${userId}/pantry`).where("item", "==", item.item); // Corrected for v8
+                                    const existingPantryItems = await pantryQuery.get(); // Corrected for v8
+
+                                    if (!existingPantryItems.empty) {
+                                        const existingItemDoc = existingPantryItems.docs[0];
+                                        await existingItemDoc.ref.update({ // Corrected for v8
+                                            quantity: existingItemDoc.data().quantity + item.quantity
+                                        });
+                                    } else {
+                                        await db.collection(`artifacts/${appId}/users/${userId}/pantry`).add({ // Corrected for v8
+                                            item: item.item,
+                                            quantity: item.quantity,
+                                            category: item.category || 'Uncategorized',
+                                        });
+                                    }
+                                }
+
+                                for (const extractedItem of extractedData.items) {
+                                    const shoppingListQuery = db.collection(`artifacts/${appId}/users/${userId}/shoppingList`).where("item", "==", extractedItem.item); // Corrected for v8
+                                    const existingShoppingListItems = await shoppingListQuery.get(); // Corrected for v8
+
+                                    if (!existingShoppingListItems.empty) {
+                                        const itemToRemove = existingShoppingListItems.docs[0];
+                                        await itemToRemove.ref.delete(); // Corrected for v8
+                                        console.log(`Removed ${extractedItem.item} from shopping list.`);
+                                    }
+                                }
+
+                                setSelectedFile(null);
+                            } else {
+                                showMessage("Failed to extract bill details. Please try another image or format.", true);
+                                console.error("LLM response structure unexpected:", result);
+                            }
+                        };
+                        reader.onerror = (error) => {
+                            showMessage("Error reading file.", true);
+                            console.error("File reader error:", error);
+                        };
+                    } catch (err) {
+                        showMessage(`An error occurred during extraction: ${err.message}`, true);
+                        console.error("Upload or LLM call error:", err);
+                    } finally {
+                        setIsProcessing(false);
+                    }
+                };
+
+                return (
+                    <div className="p-8 bg-white rounded-2xl shadow-xl max-w-lg mx-auto">
+                        <h2 className="text-3xl font-extrabold text-gray-900 mb-8 text-center">Upload New Bill</h2>
+                        <div className="mb-6">
+                            <label htmlFor="bill-upload" className="block text-lg font-semibold text-gray-700 mb-3">
+                                Select Bill Image
+                            </label>
+                            <input
+                                type="file"
+                                id="bill-upload"
+                                accept="image/*"
+                                onChange={handleFileChange}
+                                className="block w-full text-base text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 file:mr-4 file:py-3 file:px-6 file:rounded-full file:border-0 file:text-base file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition duration-200"
+                            />
+                        </div>
+                        {selectedFile && (
+                            <div className="mb-6 text-base text-gray-700 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                Selected: <span className="font-semibold text-blue-800">{selectedFile.name}</span>
+                            </div>
+                        )}
+                        <button
+                            onClick={handleUpload}
+                            disabled={isProcessing || !selectedFile}
+                            className="w-full flex items-center justify-center px-6 py-3 border border-transparent text-lg font-bold rounded-xl shadow-lg text-white bg-gradient-to-r from-green-500 to-green-700 hover:from-green-600 hover:to-green-800 focus:outline-none focus:ring-4 focus:ring-green-300 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transform transition-all duration-200 hover:scale-105"
+                        >
+                            {isProcessing ? (
+                                <>
+                                    <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    Processing...
+                                </>
+                            ) : (
+                                <>
+                                    {/* <Upload className="mr-3 h-6 w-6" /> */} <span>Upload and Extract</span>
+                                </>
+                            )}
+                        </button>
+                    </div>
+                );
+            };
+
+            // --- History Component ---
+            const HistoryView = () => {
+                const [filterType, setFilterType] = React.useState('month');
+                const [selectedMonth, setSelectedMonth] = React.useState(new Date().toISOString().slice(0, 7));
+                const [startDate, setStartDate] = React.useState('');
+                const [endDate, setEndDate] = React.useState('');
+
+                const calculateFilteredExpenses = React.useCallback(() => {
+                    let total = 0;
+                    let filteredBills = [];
+                    const categoryTotals = {};
+
+                    if (filterType === 'month') {
+                        filteredBills = bills.filter(bill => {
+                            const billDate = bill.timestamp.toDate();
+                            return billDate.toISOString().slice(0, 7) === selectedMonth;
+                        });
+                    } else if (filterType === 'date_range' && startDate && endDate) {
+                        const start = new Date(startDate);
+                        const end = new Date(endDate);
+                        end.setDate(end.getDate() + 1);
+
+                        filteredBills = bills.filter(bill => {
+                            const billDate = bill.timestamp.toDate();
+                            return billDate >= start && billDate < end;
+                        });
+                    } else {
+                        filteredBills = bills;
+                    }
+
+                    total = filteredBills.reduce((sum, bill) => {
+                        const billTotal = Number(bill.totalAmount) || 0;
+                        bill.items.forEach(item => {
+                            const category = item.category || 'Uncategorized';
+                            const itemTotalPrice = Number(item.total_price) || 0;
+                            categoryTotals[category] = (categoryTotals[category] || 0) + itemTotalPrice;
+                        });
+                        return sum + billTotal;
+                    }, 0);
+
+                    return { total, filteredBills, categoryTotals };
+                }, [bills, filterType, selectedMonth, startDate, endDate]);
+
+                const { total, filteredBills, categoryTotals } = calculateFilteredExpenses();
+                const budgetProgress = (total / monthlyBudget) * 100;
+
+                React.useEffect(() => {
+                    if (total > monthlyBudget) {
+                        if (!isBudgetAlertDismissed) {
+                            showBannerAlert(`Budget Alert! 📈 You've spent ₹${total.toFixed(2)} out of your ₹${monthlyBudget.toFixed(2)} monthly budget.`, 'budget');
+                        }
+                    } else {
+                        setIsBudgetAlertDismissed(false);
+                    }
+                }, [total, monthlyBudget, showBannerAlert, isBudgetAlertDismissed]);
+
+                React.useEffect(() => {
+                    const itemLastPrices = {};
+                    const currentPriceIncreases = [];
+
+                    const allSortedBills = [...bills].sort((a, b) => a.timestamp.toDate() - b.timestamp.toDate());
+
+                    allSortedBills.forEach(bill => {
+                        bill.items.forEach(item => {
+                            if (item.item && item.price_per_unit !== undefined && item.price_per_unit !== null) {
+                                const currentPrice = item.price_per_unit;
+                                if (itemLastPrices[item.item] !== undefined) {
+                                    const lastPrice = itemLastPrices[item.item];
+                                    if (currentPrice > lastPrice) {
+                                        currentPriceIncreases.push({
+                                            item: item.item,
+                                            oldPrice: lastPrice,
+                                            newPrice: currentPrice,
+                                            difference: currentPrice - lastPrice
+                                        });
+                                    }
+                                }
+                                itemLastPrices[item.item] = currentPrice;
+                            }
+                        });
+                    });
+
+                    if (currentPriceIncreases.length > 0) {
+                        if (!isPriceIncreaseAlertDismissed) {
+                            const alert = currentPriceIncreases[0];
+                            showBannerAlert(`${alert.item} price increased by ₹${alert.difference.toFixed(2)} (from ₹${alert.oldPrice.toFixed(2)} to ₹${alert.newPrice.toFixed(2)})! Consider changing the shop store.`, 'priceIncrease');
+                        }
+                    } else {
+                        setIsPriceIncreaseAlertDismissed(false);
+                    }
+                }, [bills, showBannerAlert, isPriceIncreaseAlertDismissed]);
+
+
+                return (
+                    <div className="p-8 bg-white rounded-2xl shadow-xl max-w-2xl mx-auto">
+                        <h2 className="text-3xl font-extrabold text-gray-900 mb-8 text-center">Spending History</h2>
+
+                        <div className="mb-8 flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-6">
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="radio"
+                                    id="filterMonth"
+                                    name="filterType"
+                                    value="month"
+                                    checked={filterType === 'month'}
+                                    onChange={() => setFilterType('month')}
+                                    className="form-radio h-5 w-5 text-blue-600 border-gray-300 focus:ring-blue-500 transition duration-200"
+                                />
+                                <label htmlFor="filterMonth" className="text-lg font-medium text-gray-700">Filter by Month</label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                                <input
+                                    type="radio"
+                                    id="filterDateRange"
+                                    name="filterType"
+                                    value="date_range"
+                                    checked={filterType === 'date_range'}
+                                    onChange={() => setFilterType('date_range')}
+                                    className="form-radio h-5 w-5 text-blue-600 border-gray-300 focus:ring-blue-500 transition duration-200"
+                                />
+                                <label htmlFor="filterDateRange" className="text-lg font-medium text-gray-700">Filter by Date Range</label>
+                            </div>
+                        </div>
+
+                        {filterType === 'month' && (
+                            <div className="mb-8 flex justify-center">
+                                <input
+                                    type="month"
+                                    value={selectedMonth}
+                                    onChange={(e) => setSelectedMonth(e.target.value)}
+                                    className="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-lg transition duration-200"
+                                />
+                            </div>
+                        )}
+
+                        {filterType === 'date_range' && (
+                            <div className="mb-8 flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-6 justify-center">
+                                <div>
+                                    <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                                    <input
+                                        type="date"
+                                        id="startDate"
+                                        value={startDate}
+                                        onChange={(e) => setStartDate(e.target.value)}
+                                        className="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-lg transition duration-200"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                                    <input
+                                        type="date"
+                                        id="endDate"
+                                        value={endDate}
+                                        onChange={(e) => setEndDate(e.target.value)}
+                                        className="p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-blue-500 focus:border-blue-500 text-lg transition duration-200"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        <div className="mb-8 text-center text-4xl font-extrabold text-blue-700 p-4 bg-blue-50 rounded-lg shadow-inner">
+                            {total > 0 ? `Total Expenses: ₹${total.toFixed(2)}` : 'No Expenses Recorded for this Period'}
+                        </div>
+
+                        {/* Budget Tracking */}
+                        <div className="mb-8 p-6 bg-blue-50 rounded-xl shadow-md border border-blue-200">
+                            <h3 className="text-2xl font-semibold text-blue-800 mb-4 text-center">Monthly Budget</h3>
+                            <div className="flex flex-col sm:flex-row items-center justify-center space-y-3 sm:space-y-0 sm:space-x-4 mb-4">
+                                <label htmlFor="monthlyBudget" className="text-lg font-medium text-blue-700">Set Monthly Budget (₹):</label>
+                                <input
+                                    type="number"
+                                    id="monthlyBudget"
+                                    value={monthlyBudget}
+                                    onChange={(e) => setMonthlyBudget(Number(e.target.value))}
+                                    min="0"
+                                    className="w-36 p-2 border border-blue-300 rounded-lg text-center text-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                />
+                            </div>
+                            <div className="text-center text-xl font-medium text-gray-800 mb-3">
+                                Spent: <span className="font-bold text-blue-900">₹{total.toFixed(2)}</span> of <span className="font-bold text-blue-900">₹{monthlyBudget.toFixed(2)}</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded-full h-5 overflow-hidden">
+                                <div
+                                    className={`h-full rounded-full transition-all duration-500 ease-out ${budgetProgress > 100 ? 'bg-red-500' : 'bg-green-500'}`}
+                                    style={{ width: `${Math.min(100, budgetProgress)}%` }}
+                                ></div>
+                            </div>
+                            {budgetProgress > 100 && (
+                                <p className="text-center text-red-600 text-base mt-3 font-semibold animate-pulse">
+                                    You are over budget by ₹{(total - monthlyBudget).toFixed(2)}!
+                                </p>
+                            )}
+                        </div>
+
+                        {/* Category-wise Spending */}
+                        <div className="mb-8 p-6 bg-gray-50 rounded-xl shadow-md border border-gray-200">
+                            <h3 className="text-2xl font-semibold text-gray-800 mb-4 text-center">Spending by Category</h3>
+                            {Object.keys(categoryTotals).length > 0 ? (
+                                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {Object.entries(categoryTotals).map(([category, amount]) => (
+                                        <li key={category} className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-gray-100 hover:shadow-md transition duration-200">
+                                            <span className="font-medium text-lg text-gray-700">{category}:</span>
+                                            <span className="font-bold text-lg text-gray-900">₹{amount.toFixed(2)}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="p-6 text-center text-gray-500 text-lg">No categorized spending for this period.</p>
+                            )}
+                        </div>
+
+                        <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-xl shadow-inner">
+                            {filteredBills.length > 0 ? (
+                                <ul className="divide-y divide-gray-200">
+                                    {filteredBills.map(bill => (
+                                        <li key={bill.id} className="p-5 hover:bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center transition duration-200">
+                                            <div className="mb-3 sm:mb-0">
+                                                <p className="font-semibold text-xl text-gray-900">Date: {formatDate(bill.timestamp)}</p>
+                                                <p className="text-lg text-gray-700">Total: <span className="font-bold">₹{bill.totalAmount ? bill.totalAmount.toFixed(2) : '0.00'}</span></p>
+                                                <div className="mt-3 text-base text-gray-600">
+                                                    {bill.items && bill.items.length > 0 && (
+                                                        <details className="cursor-pointer">
+                                                            <summary className="font-medium text-blue-600 hover:text-blue-800 transition duration-200">
+                                                                View Items ({bill.items.length})
+                                                            </summary>
+                                                            <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+                                                                {bill.items.map((item, index) => (
+                                                                    <li key={index}>
+                                                                        {item.item} - Qty: {item.quantity}, Price: ₹{item.total_price ? item.total_price.toFixed(2) : 'N/A'} (Category: {item.category || 'N/A'})
+                                                                    </li>
+                                                                ))}
+                                                            </ul>
+                                                        </details>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {bill.imageUrl && !bill.isManualEntry ? (
+                                                <button
+                                                    onClick={() => {
+                                                        setModalContent(<img src={bill.imageUrl} alt="Bill" className="max-w-full h-auto rounded-lg shadow-md" />);
+                                                        setShowModal(true);
+                                                    }}
+                                                    className="mt-4 sm:mt-0 px-5 py-2 bg-blue-500 text-white text-base rounded-lg hover:bg-blue-600 transition duration-200 shadow-md transform hover:scale-105"
+                                                >
+                                                    View Bill
+                                                </button>
+                                            ) : (
+                                                <span className="mt-4 sm:mt-0 px-5 py-2 text-gray-500 text-base italic bg-gray-100 rounded-lg">Manual Entry</span>
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="p-6 text-center text-gray-500 text-lg">No bills found for the selected period.</p>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            // --- Pantry Component ---
+            const PantryView = () => {
+                const [showConfirmAddToListModal, setShowConfirmAddToListModal] = React.useState(false);
+                const [itemToDelete, setItemToDelete] = React.useState(null);
+                const [showEditExpiryModal, setShowEditExpiryModal] = React.useState(false);
+                const [selectedPantryItem, setSelectedPantryItem] = React.useState(null);
+                const [newExpiryDate, setNewExpiryDate] = React.useState('');
+                const [showRecipeModal, setShowRecipeModal] = React.useState(false);
+                const [recipeSuggestions, setRecipeSuggestions] = React.useState('');
+                const [isGeneratingRecipes, setIsGeneratingRecipes] = React.useState(false);
+
+                // States for manual item add
+                const [manualItemName, setManualItemName] = React.useState('');
+                const [manualItemQuantity, setManualItemQuantity] = React.useState(1);
+                const [manualItemPrice, setManualItemPrice] = React.useState('');
+                const [manualItemCategory, setManualItemCategory] = React.useState('Groceries');
+                const [manualItemExpiry, setManualItemExpiry] = React.useState('');
+
+                const categories = ["Groceries", "Personal Care", "Electronics", "Dining", "Utilities", "Other"];
+
+
+                const handleConfirmDelete = (item) => {
+                    setItemToDelete(item);
+                    setShowConfirmAddToListModal(true);
+                };
+
+                const handleAddToListAndConfirmDelete = async () => {
+                    if (itemToDelete && userId) {
+                        try {
+                            await db.collection(`artifacts/${appId}/users/${userId}/shoppingList`).add({ // Corrected for v8
+                                item: itemToDelete.item,
+                                quantity: itemToDelete.quantity,
+                                addedDate: new Date()
+                            });
+                            showMessage(`${itemToDelete.item} added to shopping list!`);
+                        } catch (err) {
+                            showMessage(`Error adding to shopping list: ${err.message}`, true);
+                            console.error("Error adding to shopping list:", err);
+                        }
+                    }
+                    await deleteItemFromPantry(itemToDelete.id);
+                    setShowConfirmAddToListModal(false);
+                    setItemToDelete(null);
+                };
+
+                const deleteItemFromPantry = async (itemId) => {
+                    if (!userId) {
+                        showMessage("User not authenticated. Cannot delete item.", true);
+                        return;
+                    }
+                    try {
+                        await db.collection(`artifacts/${appId}/users/${userId}/pantry`).doc(itemId).delete(); // Corrected for v8
+                        showMessage("Item deleted from pantry.");
+                    } catch (err) {
+                        showMessage(`Error deleting item: ${err.message}`, true);
+                        console.error("Error deleting pantry item:", err);
+                    }
+                };
+
+                const handleEditExpiryClick = (item) => {
+                    setSelectedPantryItem(item);
+                    // Pre-fill with existing expiry if available, format to YYYY-MM-DD
+                    if (item.expirationDate && item.expirationDate.toDate) {
+                        setNewExpiryDate(item.expirationDate.toDate().toISOString().slice(0, 10));
+                    } else {
+                        setNewExpiryDate('');
+                    }
+                    setShowEditExpiryModal(true);
+                };
+
+                const handleSaveExpiryDate = async () => {
+                    if (!selectedPantryItem || !userId) {
+                        showMessage("No item selected or user not authenticated.", true);
+                        return;
+                    }
+                    try {
+                        const expiryTimestamp = newExpiryDate ? Timestamp.fromDate(new Date(newExpiryDate)) : null; // Convert to Timestamp
+                        await db.collection(`artifacts/${appId}/users/${userId}/pantry`).doc(selectedPantryItem.id).update({ // Corrected for v8
+                            expirationDate: expiryTimestamp
+                        });
+                        showMessage(`Expiration date for ${selectedPantryItem.item} updated!`);
+                        setShowEditExpiryModal(false);
+                        setSelectedPantryItem(null);
+                        setNewExpiryDate('');
+                    } catch (err) {
+                        showMessage(`Error updating expiration date: ${err.message}`, true);
+                        console.error("Error updating expiry:", err);
+                    }
+                };
+
+                const handleSuggestRecipes = async () => {
+                    if (!userId) {
+                        showMessage("User not authenticated. Cannot suggest recipes.", true);
+                        return;
+                    }
+                    if (pantryItems.length === 0) {
+                        showMessage("Your pantry is empty! Add some items to get recipe suggestions.", true);
+                        return;
+                    }
+
+                    setIsGeneratingRecipes(true);
+                    setRecipeSuggestions(''); // Clear previous suggestions
+                    setModalContent("Generating Indian meal suggestions...");
+                    setShowModal(true); // Show a loading modal
+
+                    try {
+                        const ingredientsList = pantryItems.map(item => `${item.item} (${item.quantity})`).join(', ');
+                        const prompt = `
+                            Given the following pantry items: ${ingredientsList}.
+                            Please suggest 3-5 Indian meal recipes that primarily use these ingredients.
+                            For each recipe, provide:
+                            - Recipe Name
+                            - Main Ingredients (from the pantry)
+                            - A very brief description (1-2 sentences)
+                            Format your response as a clear, readable list.
+                        `;
+
+                        const payload = {
+                            contents: [{ role: "user", parts: [{ text: prompt }] }],
+                        };
+
+                        const apiKey = ""; // Canvas will provide this at runtime in its environment. For standalone, it's not needed directly if you use your own Firebase.
+                        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+                        const response = await fetch(apiUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const result = await response.json();
+
+                        if (result.candidates && result.candidates.length > 0 &&
+                            result.candidates[0].content && result.candidates[0].content.parts &&
+                            result.candidates[0].content.parts.length > 0) {
+                            const text = result.candidates[0].content.parts[0].text;
+                            setRecipeSuggestions(text);
+                            setShowModal(false); // Close loading modal
+                            setShowRecipeModal(true); // Show recipe suggestions modal
+                        } else {
+                            showMessage("Failed to get recipe suggestions. Please try again.", true);
+                            console.error("LLM response structure unexpected:", result);
+                        }
+                    } catch (err) {
+                        showMessage(`An error occurred while generating recipes: ${err.message}`, true);
+                        console.error("LLM call error for recipes:", err);
+                    } finally {
+                        setIsGeneratingRecipes(false);
+                    }
+                };
+
+                const handleManualAddItem = async () => {
+                    if (!manualItemName.trim() || manualItemQuantity < 1) {
+                        showMessage("Please enter a valid item name and quantity (at least 1).", true);
+                        return;
+                    }
+                    if (!userId) {
+                        showMessage("User not authenticated. Please sign in or create an account to add items.", true);
+                        return;
+                    }
+
+                    try {
+                        // Add to pantry
+                        const pantryItemData = {
+                            item: manualItemName.trim(),
+                            quantity: manualItemQuantity,
+                            category: manualItemCategory,
+                            expirationDate: manualItemExpiry ? Timestamp.fromDate(new Date(manualItemExpiry)) : null,
+                        };
+                        await db.collection(`artifacts/${appId}/users/${userId}/pantry`).add(pantryItemData); // Corrected for v8
+                        showMessage(`${manualItemName.trim()} added to pantry!`);
+
+                        // Optionally record as a manual expense
+                        if (manualItemPrice && parseFloat(manualItemPrice) > 0) {
+                            const itemPrice = Number(parseFloat(manualItemPrice).toFixed(2)); // Ensure 2 decimal places
+                            const totalItemPrice = Number((itemPrice * manualItemQuantity).toFixed(2)); // Ensure 2 decimal places
+                            await db.collection(`artifacts/${appId}/users/${userId}/bills`).add({ // Corrected for v8
+                                timestamp: Timestamp.fromDate(new Date()), // Date of manual entry
+                                totalAmount: totalItemPrice,
+                                items: [{
+                                    item: manualItemName.trim(),
+                                    quantity: manualItemQuantity,
+                                    price_per_unit: itemPrice,
+                                    total_price: totalItemPrice,
+                                    category: manualItemCategory
+                                }],
+                                isManualEntry: true // Flag to indicate it's a manual entry
+                            });
+                            showMessage(`Expense for ${manualItemName.trim()} recorded!`);
+                        }
+
+                        // Clear form
+                        setManualItemName('');
+                        setManualItemQuantity(1);
+                        setManualItemPrice('');
+                        setManualItemCategory('Groceries');
+                        setManualItemExpiry('');
+
+                    } catch (err) {
+                        showMessage(`Error adding item manually: ${err.message}`, true);
+                        console.error("Error adding manual item:", err);
+                    }
+                };
+
+
+                React.useEffect(() => {
+                    const lowStockItems = pantryItems.filter(item => item.quantity <= lowStockThreshold);
+                    if (lowStockItems.length > 0) {
+                        if (!isLowStockAlertDismissed) {
+                            const itemNames = lowStockItems.map(item => item.item).join(', ');
+                            showBannerAlert(`Running Low! 🥚 You're nearly out of: ${itemNames}. Check your pantry!`, 'lowStock');
+                        }
+                    } else {
+                        setIsLowStockAlertDismissed(false);
+                    }
+
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const expiringSoonItems = pantryItems.filter(item => {
+                        if (!item.expirationDate) return false;
+                        const expiry = item.expirationDate.toDate();
+                        expiry.setHours(0, 0, 0, 0);
+                        const diffTime = expiry.getTime() - today.getTime();
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        return diffDays >= 0 && diffDays <= 7; // Expiring within 7 days (including today)
+                    });
+
+                    if (expiringSoonItems.length > 0) {
+                        if (!isExpiryAlertDismissed) {
+                            const itemNames = expiringSoonItems.map(item => item.item).join(', ');
+                            showBannerAlert(`Expiring Soon! ⏰ Some items are expiring within 7 days: ${itemNames}.`, 'expiry');
+                        }
+                    } else {
+                        setIsExpiryAlertDismissed(false);
+                    }
+
+                }, [pantryItems, lowStockThreshold, showBannerAlert, isExpiryAlertDismissed, isLowStockAlertDismissed]);
+
+
+                return (
+                    <div className="p-8 bg-white rounded-2xl shadow-xl max-w-lg mx-auto">
+                        <h2 className="text-3xl font-extrabold text-gray-900 mb-8 text-center">Pantry Items</h2>
+
+                        {/* Manual Add Item Section */}
+                        <div className="mb-8 p-6 bg-blue-50 rounded-xl shadow-md border border-blue-200">
+                            <h3 className="text-2xl font-semibold text-blue-800 mb-5 text-center flex items-center justify-center">
+                                {/* <PlusCircle size={24} className="mr-3" /> */} <span>Manually Add Item</span>
+                            </h3>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                <div>
+                                    <label htmlFor="manualItemName" className="block text-base font-medium text-gray-700 mb-2">Item Name</label>
+                                    <input
+                                        type="text"
+                                        id="manualItemName"
+                                        value={manualItemName}
+                                        onChange={(e) => setManualItemName(e.target.value)}
+                                        placeholder="e.g., Apples"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="manualItemQuantity" className="block text-base font-medium text-gray-700 mb-2">Quantity</label>
+                                    <input
+                                        type="number"
+                                        id="manualItemQuantity"
+                                        value={manualItemQuantity}
+                                        onChange={(e) => setManualItemQuantity(Math.max(1, Number(e.target.value)))}
+                                        min="1"
+                                        className="w-full p-3 border border-gray-300 rounded-lg text-center focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                    />
+                                </div>
+                                <div>
+                                    <label htmlFor="manualItemCategory" className="block text-base font-medium text-gray-700 mb-2">Category</label>
+                                    <select
+                                        id="manualItemCategory"
+                                        value={manualItemCategory}
+                                        onChange={(e) => setManualItemCategory(e.target.value)}
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 bg-white transition duration-200"
+                                    >
+                                        {categories.map(cat => (
+                                            <option key={cat} value={cat}>{cat}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label htmlFor="manualItemPrice" className="block text-base font-medium text-gray-700 mb-2">Price (Optional)</label>
+                                    <input
+                                        type="number"
+                                        id="manualItemPrice"
+                                        value={manualItemPrice}
+                                        onChange={(e) => setManualItemPrice(e.target.value)}
+                                        min="0"
+                                        step="0.01"
+                                        placeholder="e.g., 150.00"
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                    />
+                                </div>
+                                <div className="col-span-full">
+                                    <label htmlFor="manualItemExpiry" className="block text-base font-medium text-gray-700 mb-2">Expiration Date (Optional)</label>
+                                    <input
+                                        type="date"
+                                        id="manualItemExpiry"
+                                        value={manualItemExpiry}
+                                        onChange={(e) => setManualItemExpiry(e.target.value)}
+                                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                    />
+                                </div>
+                            </div>
+                            <button
+                                onClick={handleManualAddItem}
+                                className="mt-6 w-full px-6 py-3 bg-gradient-to-r from-green-500 to-green-700 text-white text-lg font-bold rounded-xl hover:from-green-600 hover:to-green-800 transition duration-200 shadow-lg transform hover:scale-105 flex items-center justify-center"
+                            >
+                                {/* <PlusCircle size={24} className="mr-3" /> */} <span>Add to Pantry</span>
+                            </button>
+                        </div>
+
+
+                        <div className="mb-6 flex items-center justify-center space-x-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <label htmlFor="lowStockThreshold" className="text-lg font-medium text-gray-700">Low Stock Threshold:</label>
+                            <input
+                                type="number"
+                                id="lowStockThreshold"
+                                value={lowStockThreshold}
+                                onChange={(e) => setLowStockThreshold(Number(e.target.value))}
+                                min="0"
+                                className="w-24 p-2 border border-gray-300 rounded-lg text-center text-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                            />
+                        </div>
+
+                        <div className="mb-8 flex justify-center">
+                            <button
+                                onClick={handleSuggestRecipes}
+                                disabled={isGeneratingRecipes}
+                                className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-700 text-white text-lg font-bold rounded-xl hover:from-purple-600 hover:to-purple-800 transition duration-200 shadow-lg transform hover:scale-105 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isGeneratingRecipes ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-3 h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Generating...
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* <Lightbulb size={24} className="mr-3" /> */} <span>Suggest Indian Recipes</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+
+
+                        <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-xl shadow-inner">
+                            {pantryItems.length > 0 ? (
+                                <ul className="divide-y divide-gray-200">
+                                    {pantryItems.map(item => {
+                                        const today = new Date();
+                                        today.setHours(0, 0, 0, 0);
+                                        let expiryStatusClass = '';
+                                        let expiryMessage = '';
+                                        if (item.expirationDate) {
+                                            const expiry = item.expirationDate.toDate();
+                                            expiry.setHours(0, 0, 0, 0);
+                                            const diffTime = expiry.getTime() - today.getTime();
+                                            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                                            if (diffDays < 0) {
+                                                expiryStatusClass = 'bg-red-100 border-l-4 border-red-500';
+                                                expiryMessage = `Expired ${Math.abs(diffDays)} days ago!`;
+                                            } else if (diffDays <= 7) {
+                                                expiryStatusClass = 'bg-orange-100 border-l-4 border-orange-500';
+                                                expiryMessage = `Expires in ${diffDays} days!`;
+                                            }
+                                        }
+
+                                        return (
+                                            <li key={item.id} className={`p-5 flex justify-between items-center hover:bg-gray-50 transition duration-200 ${item.quantity <= lowStockThreshold ? 'bg-yellow-50 border-l-4 border-yellow-500' : ''} ${expiryStatusClass}`}>
+                                                <div>
+                                                    <p className="font-semibold text-xl text-gray-900">{item.item}</p>
+                                                    <p className="text-lg text-gray-600">Quantity: {item.quantity}</p>
+                                                    {item.quantity <= lowStockThreshold && (
+                                                        <span className="text-sm text-yellow-700 flex items-center mt-2 font-medium">
+                                                            <span className="h-3 w-3 rounded-full bg-yellow-500 mr-2 animate-pulse"></span> Low Stock!
+                                                        </span>
+                                                    )}
+                                                    <p className="text-base text-gray-500 flex items-center mt-2">
+                                                        {/* <Clock size={16} className="mr-2 text-gray-400" /> */} <span>Expiry: {formatExpirationDate(item.expirationDate)}</span>
+                                                        {expiryMessage && <span className="ml-3 font-bold text-red-600">{expiryMessage}</span>}
+                                                    </p>
+                                                </div>
+                                                <div className="flex space-x-3">
+                                                    <button
+                                                        onClick={() => handleEditExpiryClick(item)}
+                                                        className="p-3 rounded-full bg-blue-100 text-blue-600 hover:bg-blue-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition duration-200 transform hover:scale-110"
+                                                        title="Edit Expiration Date"
+                                                    >
+                                                        {/* <CalendarDays size={22} /> */} <span>Edit Expiry</span>
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleConfirmDelete(item)}
+                                                        className="p-3 rounded-full bg-red-100 text-red-600 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200 transform hover:scale-110"
+                                                        title="Delete item"
+                                                    >
+                                                        {/* <Trash2 size={22} /> */} <span>Delete</span>
+                                                    </button>
+                                                </div>
+                                            </li>
+                                        );
+                                    })}
+                                </ul>
+                            ) : (
+                                <p className="p-6 text-center text-gray-500 text-lg">Your pantry is empty. Add items using the form above or by uploading a bill!</p>
+                            )}
+                        </div>
+
+                        {/* Confirm Add to Shopping List Modal */}
+                        <Modal show={showConfirmAddToListModal} onClose={() => setShowConfirmAddToListModal(false)}>
+                            <div className="text-center p-4">
+                                <p className="text-2xl font-bold text-gray-900 mb-4">Item used up?</p>
+                                <p className="text-lg text-gray-700 mb-8">Do you want to add "<span className="font-semibold">{itemToDelete?.item}</span>" to your shopping list?</p>
+                                <div className="flex justify-center space-x-5">
+                                    <button
+                                        onClick={handleAddToListAndConfirmDelete}
+                                        className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white text-lg font-bold rounded-xl hover:from-blue-600 hover:to-blue-800 transition duration-200 shadow-lg transform hover:scale-105"
+                                    >
+                                        Yes, Add to List
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            deleteItemFromPantry(itemToDelete.id);
+                                            setShowConfirmAddToListModal(false);
+                                            setItemToDelete(null);
+                                        }}
+                                        className="px-6 py-3 bg-gray-300 text-gray-800 text-lg font-bold rounded-xl hover:bg-gray-400 transition duration-200 shadow-lg transform hover:scale-105"
+                                    >
+                                        No, Just Delete
+                                    </button>
+                                </div>
+                            </div>
+                        </Modal>
+
+                        {/* Edit Expiration Date Modal */}
+                        <Modal show={showEditExpiryModal} onClose={() => setShowEditExpiryModal(false)}>
+                            <div className="text-center p-4">
+                                <h3 className="text-2xl font-bold text-gray-900 mb-5">Set Expiration Date for <span className="font-semibold">{selectedPantryItem?.item}</span></h3>
+                                <input
+                                    type="date"
+                                    value={newExpiryDate}
+                                    onChange={(e) => setNewExpiryDate(e.target.value)}
+                                    className="p-3 border border-gray-300 rounded-lg mb-6 w-full text-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                />
+                                <div className="flex justify-center space-x-5">
+                                    <button
+                                        onClick={handleSaveExpiryDate}
+                                        className="px-6 py-3 bg-gradient-to-r from-green-500 to-green-700 text-white text-lg font-bold rounded-xl hover:from-green-600 hover:to-green-800 transition duration-200 shadow-lg transform hover:scale-105"
+                                    >
+                                        Save
+                                    </button>
+                                    <button
+                                        onClick={() => setShowEditExpiryModal(false)}
+                                        className="px-6 py-3 bg-gray-300 text-gray-800 text-lg font-bold rounded-xl hover:bg-gray-400 transition duration-200 shadow-lg transform hover:scale-105"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </Modal>
+
+                        {/* Recipe Suggestions Modal */}
+                        <Modal show={showRecipeModal} onClose={() => setShowRecipeModal(false)}>
+                            <div className="text-left p-4">
+                                <h3 className="text-2xl font-bold text-gray-900 mb-5 text-center">Indian Meal Suggestions</h3>
+                                {recipeSuggestions ? (
+                                    <div className="whitespace-pre-wrap text-lg text-gray-700 max-h-80 overflow-y-auto p-4 border border-gray-200 rounded-lg bg-gray-50 shadow-inner">
+                                        {recipeSuggestions}
+                                    </div>
+                                ) : (
+                                    <p className="text-center text-gray-500 text-lg">No suggestions available.</p>
+                                )}
+                            </div>
+                        </Modal>
+                    </div>
+                );
+            };
+
+            // --- Shopping List Component ---
+            const ShoppingListView = () => {
+                const [newItem, setNewItem] = React.useState('');
+                const [newItemQuantity, setNewItemQuantity] = React.useState(1);
+
+                const handleAddItem = async () => {
+                    if (!newItem.trim()) {
+                        showMessage("Please enter an item name.", true);
+                        return;
+                    }
+                    if (!userId) {
+                        showMessage("User not authenticated. Please sign in or create an account to add items.", true);
+                        return;
+                    }
+                    try {
+                        await db.collection(`artifacts/${appId}/users/${userId}/shoppingList`).add({ // Corrected for v8
+                            item: newItem.trim(),
+                            quantity: newItemQuantity,
+                            addedDate: new Date()
+                        });
+                        showMessage(`${newItem.trim()} added to shopping list!`);
+                        setNewItem('');
+                        setNewItemQuantity(1);
+                    } catch (err) {
+                        showMessage(`Error adding item: ${err.message}`, true);
+                        console.error("Error adding shopping list item:", err);
+                    }
+                };
+
+                const handleDeleteItem = async (itemId) => {
+                    if (!userId) {
+                        showMessage("User not authenticated. Cannot delete item.", true);
+                        return;
+                    }
+                    try {
+                        await db.collection(`artifacts/${appId}/users/${userId}/shoppingList`).doc(itemId).delete(); // Corrected for v8
+                        showMessage("Item removed from shopping list.");
+                    } catch (err) {
+                        showMessage(`Error deleting item: ${err.message}`, true);
+                        console.error("Error deleting shopping list item:", err);
+                    }
+                };
+
+                const handleUpdateItemQuantity = async (itemId, newQuantity) => {
+                    if (!userId) {
+                        showMessage("User not authenticated. Cannot update item quantity.", true);
+                        return;
+                    }
+                    if (newQuantity < 1) {
+                        showMessage("Quantity cannot be less than 1. If you want to remove, please delete the item.", true);
+                        return;
+                    }
+                    try {
+                        await db.collection(`artifacts/${appId}/users/${userId}/shoppingList`).doc(itemId).update({ // Corrected for v8
+                            quantity: newQuantity
+                        });
+                    } catch (err) {
+                        showMessage(`Error updating quantity: ${err.message}`, true);
+                        console.error("Error updating shopping list item quantity:", err);
+                    }
+                };
+
+                return (
+                    <div className="p-8 bg-white rounded-2xl shadow-xl max-w-lg mx-auto">
+                        <h2 className="text-3xl font-extrabold text-gray-900 mb-8 text-center">Shopping List</h2>
+
+                        <div className="mb-8 flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-4">
+                            <input
+                                type="text"
+                                placeholder="Add new item"
+                                value={newItem}
+                                onChange={(e) => setNewItem(e.target.value)}
+                                className="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-lg transition duration-200"
+                            />
+                            <input
+                                type="number"
+                                min="1"
+                                value={newItemQuantity}
+                                onChange={(e) => setNewItemQuantity(Math.max(1, Number(e.target.value)))}
+                                className="w-24 p-3 border border-gray-300 rounded-lg text-center text-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                            />
+                            <button
+                                onClick={handleAddItem}
+                                className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-700 text-white text-lg font-bold rounded-xl hover:from-blue-600 hover:to-blue-800 transition duration-200 shadow-lg transform hover:scale-105 flex items-center justify-center"
+                            >
+                                {/* <ShoppingCart size={24} className="mr-3" /> */} <span>Add</span>
+                            </button>
+                        </div>
+
+                        <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-xl shadow-inner">
+                            {shoppingListItems.length > 0 ? (
+                                <ul className="divide-y divide-gray-200">
+                                    {shoppingListItems.map(item => (
+                                        <li key={item.id} className="p-5 flex justify-between items-center hover:bg-gray-50 transition duration-200">
+                                            <div>
+                                                <p className="font-semibold text-xl text-gray-900">{item.item}</p>
+                                                <div className="flex items-center mt-2">
+                                                    <label htmlFor={`qty-${item.id}`} className="text-lg text-gray-600 mr-3">Quantity:</label>
+                                                    <input
+                                                        type="number"
+                                                        id={`qty-${item.id}`}
+                                                        min="1"
+                                                        value={item.quantity}
+                                                        onChange={(e) => handleUpdateItemQuantity(item.id, Math.max(1, Number(e.target.value)))}
+                                                        className="w-24 p-2 border border-gray-300 rounded-lg text-center text-lg focus:ring-blue-500 focus:border-blue-500 transition duration-200"
+                                                    />
+                                                </div>
+                                            </div>
+                                            <button
+                                                onClick={() => handleDeleteItem(item.id)}
+                                                className="p-3 rounded-full bg-red-100 text-red-600 hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition duration-200 transform hover:scale-110"
+                                                title="Remove from list"
+                                            >
+                                                {/* <Trash2 size={22} /> */} <span>Remove</span>
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <p className="p-6 text-center text-gray-500 text-lg">Your shopping list is empty! Start adding items.</p>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+
+            // Custom Modal Component
+            const Modal = ({ show, onClose, children }) => {
+                if (!show) return null;
+                return (
+                    <div className="fixed inset-0 bg-gray-800 bg-opacity-75 flex items-center justify-center p-4 z-50 animate-fade-in">
+                        <div className="bg-white rounded-2xl shadow-2xl p-8 relative max-w-lg w-full transform scale-95 animate-scale-in">
+                            <button
+                                onClick={onClose}
+                                className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition duration-200 transform hover:scale-110"
+                                title="Close"
+                            >
+                                {/* <XCircle size={28} /> */} <span>X</span>
+                            </button>
+                            <div className="mt-4">
+                                {children}
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // Alert Banner Component
+            const AlertBanner = ({ show, message, onClose, type }) => {
+                if (!show) return null;
+                return (
+                    <div className="fixed top-0 left-0 right-0 z-50 p-5 bg-yellow-100 border-b-4 border-yellow-500 text-yellow-800 flex items-center justify-center shadow-lg animate-slide-down">
+                        {/* <AlertTriangle className="mr-4 text-yellow-600" size={28} /> */} <span>!</span>
+                        <span className="font-semibold text-lg">{message}</span>
+                        <button
+                            onClick={() => onClose(type)}
+                            className="ml-auto p-2 rounded-full text-yellow-800 hover:bg-yellow-200 transition duration-200 transform hover:scale-110"
+                            title="Close alert"
+                        >
+                            {/* <XCircle size={24} /> */} <span>X</span>
+                        </button>
+                    </div>
+                );
+            };
+
+
+            if (loading) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen bg-gray-100">
+                        <div className="text-center text-gray-600">
+                            <svg className="animate-spin h-12 w-12 text-blue-500 mx-auto mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <p className="text-xl font-medium">Loading application...</p>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (!userId) {
+                return (
+                    <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 font-inter text-gray-800 p-6 sm:p-10 flex flex-col items-center justify-center">
+                        <AuthScreen setUserId={setUserId} setUserDisplayName={setUserDisplayName} showMessage={showMessage} />
+                        <Modal show={showModal} onClose={() => setShowModal(false)}>
+                            <div className="text-center">
+                                {error ? (
+                                    <div className="text-red-600 font-bold text-2xl mb-3 flex items-center justify-center">
+                                        {/* <XCircle className="mr-3" size={28} /> */} <span>Error!</span>
+                                    </div>
+                                ) : (
+                                    <div className="text-green-600 font-bold text-2xl mb-3 flex items-center justify-center">
+                                        Success!
+                                    </div>
+                                )}
+                                <p className="text-xl text-gray-700">{modalContent}</p>
+                            </div>
+                        </Modal>
+                    </div>
+                );
+            }
+
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 font-inter text-gray-800 p-6 sm:p-10 flex flex-col items-center">
+                    <AlertBanner
+                        show={showAlertBanner}
+                        message={alertBannerMessage}
+                        onClose={(type) => {
+                            setShowAlertBanner(false);
+                            setCurrentActiveAlertType(null);
+                            if (type === 'expiry') {
+                                setIsExpiryAlertDismissed(true);
+                            } else if (type === 'lowStock') {
+                                setIsLowStockAlertDismissed(true);
+                            } else if (type === 'budget') {
+                                setIsBudgetAlertDismissed(true);
+                            } else if (type === 'priceIncrease') {
+                                setIsPriceIncreaseAlertDismissed(true);
+                            }
+                        }}
+                        type={currentActiveAlertType}
+                    />
+
+                    <div className="w-full max-w-4xl flex justify-between items-center mb-8 p-4 bg-white rounded-xl shadow-lg">
+                        <div className="text-lg text-gray-700 flex items-center">
+                            Hello, <span className="font-bold ml-2 text-blue-700">{userDisplayName}</span>!
+                            <span className="font-mono bg-gray-200 px-3 py-1 rounded-full ml-3 text-sm text-gray-600 shadow-inner">ID: {userId.substring(0, 8)}...</span>
+                        </div>
+                        <button
+                            onClick={handleSignOut}
+                            className="px-5 py-2 bg-gradient-to-r from-red-500 to-red-700 text-white text-base rounded-lg hover:from-red-600 hover:to-red-800 transition duration-200 shadow-md transform hover:scale-105 flex items-center"
+                        >
+                            {/* <LogOut size={18} className="mr-2" /> */} <span>Sign Out</span>
+                        </button>
+                    </div>
+
+                    <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl p-6 mb-10">
+                        <nav className="flex justify-around items-center space-x-3 sm:space-x-6">
+                            <button
+                                onClick={() => setActiveTab('upload')}
+                                className={`flex flex-col items-center p-4 rounded-xl transition duration-300 transform hover:scale-105 ${activeTab === 'upload' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-700 hover:bg-blue-50'}`}
+                            >
+                                {/* <Camera size={30} /> */} <span className="text-sm sm:text-base mt-2 font-medium">Upload Bill</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('history')}
+                                className={`flex flex-col items-center p-4 rounded-xl transition duration-300 transform hover:scale-105 ${activeTab === 'history' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-700 hover:bg-blue-50'}`}
+                            >
+                                {/* <History size={30} /> */} <span className="text-sm sm:text-base mt-2 font-medium">History</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('pantry')}
+                                className={`flex flex-col items-center p-4 rounded-xl transition duration-300 transform hover:scale-105 ${activeTab === 'pantry' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-700 hover:bg-blue-50'}`}
+                            >
+                                {/* <ShoppingBag size={30} /> */} <span className="text-sm sm:text-base mt-2 font-medium">Pantry</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('shoppingList')}
+                                className={`flex flex-col items-center p-4 rounded-xl transition duration-300 transform hover:scale-105 ${activeTab === 'shoppingList' ? 'bg-blue-600 text-white shadow-lg' : 'text-gray-700 hover:bg-blue-50'}`}
+                            >
+                                {/* <ShoppingCart size={30} /> */} <span className="text-sm sm:text-base mt-2 font-medium">Shopping List</span>
+                            </button>
+                        </nav>
+                    </div>
+
+                    <main className="w-full max-w-4xl">
+                        {activeTab === 'upload' && <BillUpload />}
+                        {activeTab === 'history' && <HistoryView />}
+                        {activeTab === 'pantry' && <PantryView />}
+                        {activeTab === 'shoppingList' && <ShoppingListView />}
+                    </main>
+
+                    <Modal show={showModal} onClose={() => setShowModal(false)}>
+                        <div className="text-center">
+                            {error ? (
+                                <div className="text-red-600 font-bold text-2xl mb-3 flex items-center justify-center">
+                                    {/* <XCircle className="mr-3" size={28} /> */} <span>Error!</span>
+                                </div>
+                            ) : (
+                                <div className="text-green-600 font-bold text-2xl mb-3 flex items-center justify-center">
+                                    Success!
+                                </div>
+                            )}
+                            <p className="text-xl text-gray-700">{modalContent}</p>
+                        </div>
+                    </Modal>
+                </div>
+            );
+        };
+
+        // Render the App component
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
